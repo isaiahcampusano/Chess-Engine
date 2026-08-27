@@ -23,6 +23,7 @@ const DRAW_SOUND_TEST_FEN = "7k/P7/8/8/8/8/8/7K w - - 0 1";
 const PROMOTION_PIECES = new Set(["q", "r", "b", "n"]);
 const BOARD_FILES = "abcdefgh";
 const THEME_STORAGE_KEY = "chess-theme";
+const OPPONENT_STORAGE_KEY = "chess-opponent";
 const THEMES = {
   dark: {
     "--page": "#0c120f",
@@ -224,6 +225,7 @@ const elements = {
   board: document.querySelector("#myBoard"),
   boardOverlay: document.querySelector("#boardOverlay"),
   botButtons: document.querySelectorAll("[data-bot]"),
+  botSelectorHeading: document.querySelector("#botSelectorHeading"),
   botSelectionStatus: document.querySelector("#botSelectionStatus"),
   clearPlanButton: document.querySelector("#clearPlanButton"),
   closeAnalysisButton: document.querySelector("#closeAnalysisButton"),
@@ -238,12 +240,17 @@ const elements = {
   evalBarScore: document.querySelector("#evalBarScore"),
   evalBlackFill: document.querySelector("#evalBlackFill"),
   evalWhiteFill: document.querySelector("#evalWhiteFill"),
+  lockedPill: document.querySelector("#lockedPill"),
   moveCount: document.querySelector("#moveCount"),
   moveHistory: document.querySelector("#moveHistory"),
   newGameButton: document.querySelector("#newGameButton"),
   nextAnalysisButton: document.querySelector("#nextAnalysisButton"),
   nodesValue: document.querySelector("#nodesValue"),
   opponentName: document.querySelector("#opponentName"),
+  opponentDialog: document.querySelector("#opponentDialog"),
+  opponentDialogDescription: document.querySelector("#opponentDialogDescription"),
+  opponentDialogHeading: document.querySelector("#opponentDialogHeading"),
+  opponentSelectionError: document.querySelector("#opponentSelectionError"),
   promotionDialog: document.querySelector("#promotionDialog"),
   promotionOptions: document.querySelectorAll("[data-promotion]"),
   planMovesButton: document.querySelector("#planMovesButton"),
@@ -254,6 +261,7 @@ const elements = {
   previousAnalysisButton: document.querySelector("#previousAnalysisButton"),
   retryButton: document.querySelector("#retryButton"),
   reviewGameButton: document.querySelector("#reviewGameButton"),
+  reviewFromSelectionButton: document.querySelector("#reviewFromSelectionButton"),
   searchNotice: document.querySelector("#searchNotice"),
   statusDescription: document.querySelector("#statusDescription"),
   statusHeading: document.querySelector("#statusHeading"),
@@ -301,6 +309,7 @@ let interactionMessage = "";
 let engineMoveAnnouncement = "";
 let dragInProgress = false;
 let selectedBot = { id: "expert", label: "Expert", depth: 3 };
+let opponentSelected = false;
 let gameActive = false;
 let isStartingGame = false;
 let botRequestInFlight = false;
@@ -375,6 +384,11 @@ function initialize() {
   elements.promotionOptions.forEach((button) => {
     button.addEventListener("click", choosePromotion);
   });
+  elements.opponentDialog.addEventListener("cancel", (event) => event.preventDefault());
+  elements.reviewFromSelectionButton.addEventListener("click", () => {
+    elements.opponentDialog.close();
+    requestGameAnalysis();
+  });
   window.addEventListener("resize", debounce(() => {
     board.resize();
     scheduleBoardAccessibilityRender();
@@ -386,7 +400,8 @@ function initialize() {
   elements.dependencyAlert.classList.remove("is-error");
   renderSoundToggle();
   render();
-  startNewGame();
+  loadOpponentSelection();
+  requestLiveEvaluation();
 }
 
 function initializeTheme() {
@@ -440,9 +455,7 @@ function renderSoundToggle(muted = isMuted()) {
 }
 
 async function selectBot(event) {
-  if (gameActive) {
-    elements.botSelectionStatus.textContent =
-      "The opponent is locked for this game. Start a new game to choose another.";
+  if (opponentSelected) {
     return;
   }
 
@@ -450,6 +463,7 @@ async function selectBot(event) {
   const botId = button.dataset.bot;
   botRequestInFlight = true;
   renderBotSelector();
+  elements.opponentSelectionError.hidden = true;
   elements.botSelectionStatus.textContent = `Selecting ${button.querySelector("strong").textContent}…`;
 
   try {
@@ -462,10 +476,20 @@ async function selectBot(event) {
     if (!response.ok) {
       throw new Error(data.error || "The opponent could not be changed.");
     }
+    opponentSelected = true;
+    try {
+      window.localStorage.setItem(OPPONENT_STORAGE_KEY, botId);
+    } catch (error) {
+      // The server session still preserves the choice when storage is unavailable.
+    }
     renderSelectedBot(data);
+    resetLocalGameState();
+    elements.opponentDialog.close();
   } catch (error) {
-    elements.botSelectionStatus.textContent =
-      error.message || "The opponent could not be changed. Please try again.";
+    const message = error.message || "The opponent could not be changed. Please try again.";
+    elements.botSelectionStatus.textContent = message;
+    elements.opponentSelectionError.textContent = message;
+    elements.opponentSelectionError.hidden = false;
   } finally {
     botRequestInFlight = false;
     renderBotSelector();
@@ -484,16 +508,10 @@ function renderSelectedBot(data) {
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-pressed", String(isActive));
   });
-  if (data.status === "preference_saved") {
-    elements.botSelectionStatus.textContent =
-      `${selectedBot.label} is saved for your next game.`;
-  } else if (gameActive) {
-    elements.botSelectionStatus.textContent =
-      `${selectedBot.label} is locked for this game at depth ${depth}.`;
-  } else {
-    elements.botSelectionStatus.textContent =
-      `${selectedBot.label} selected. Make your first move to lock it in.`;
-  }
+  elements.botSelectionStatus.textContent =
+    `${selectedBot.label} is locked for this game at depth ${depth}.`;
+  elements.botSelectorHeading.textContent = `${selectedBot.label} Engine`;
+  elements.lockedPill.hidden = false;
   elements.depthBadgeValue.textContent = String(depth);
   elements.depthBadge.setAttribute(
     "aria-label",
@@ -504,17 +522,14 @@ function renderSelectedBot(data) {
 
 function renderBotSelector() {
   elements.botButtons.forEach((button) => {
-    button.disabled = gameActive || isStartingGame || botRequestInFlight;
+    button.disabled = opponentSelected || isStartingGame || botRequestInFlight;
   });
 }
 
 function renderBotLockMessage() {
-  if (gameActive) {
+  if (opponentSelected) {
     elements.botSelectionStatus.textContent =
       `${selectedBot.label} is locked for this game at depth ${selectedBot.depth}.`;
-  } else if (game.isGameOver()) {
-    elements.botSelectionStatus.textContent =
-      "Game over. Choose an opponent for your next game, then select New game.";
   }
 }
 
@@ -527,6 +542,7 @@ function onDragStart(source, piece) {
     botRequestInFlight ||
     isThinking ||
     pendingPromotion ||
+    !opponentSelected ||
     activeGame.isGameOver() ||
     (!planningState.isPlanning && activeGame.turn() !== "w") ||
     !piece.toLowerCase().startsWith(activeGame.turn())
@@ -599,12 +615,17 @@ function playPlayerMove(moveOptions) {
 
   if (!game.isGameOver() && game.turn() === "b") {
     requestEngineMove();
+  } else if (game.isGameOver()) {
+    releaseCompletedGame();
   }
 
   return true;
 }
 
 function playActiveMove(moveOptions) {
+  if (!opponentSelected) {
+    return false;
+  }
   return planningState.isPlanning
     ? playPlannedMove(moveOptions)
     : playPlayerMove(moveOptions);
@@ -1139,6 +1160,7 @@ async function requestEngineMove() {
       gameActive = false;
       if (data.game_over) {
         playOutcomeSound(data.outcome || currentOutcome());
+        releaseCompletedGame();
       }
       renderBotLockMessage();
       render();
@@ -1169,6 +1191,9 @@ async function requestEngineMove() {
       timedOut: Boolean(data.timed_out),
     };
     requestLiveEvaluation();
+    if (game.isGameOver()) {
+      releaseCompletedGame();
+    }
   } catch (error) {
     if (requestId !== activeRequestId) {
       return;
@@ -1408,6 +1433,9 @@ function closeGameAnalysis() {
   analysisState.selectedPly = 0;
   syncBoard(false);
   render();
+  if (!opponentSelected && game.isGameOver()) {
+    openOpponentSelector(true);
+  }
 }
 
 function selectAnalysisPly(ply) {
@@ -1439,6 +1467,78 @@ function handleAnalysisGraphKeydown(event) {
   }
 }
 
+async function loadOpponentSelection() {
+  try {
+    const response = await fetch("/select_bot");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || "Your opponent selection could not be loaded.");
+    }
+    if (data.needs_selection || !data.selected) {
+      opponentSelected = false;
+      openOpponentSelector(false);
+      return;
+    }
+
+    opponentSelected = true;
+    renderSelectedBot(data);
+    try {
+      window.localStorage.setItem(OPPONENT_STORAGE_KEY, data.selected);
+    } catch (error) {
+      // The server session remains authoritative when storage is unavailable.
+    }
+    render();
+  } catch (error) {
+    opponentSelected = false;
+    openOpponentSelector(false);
+    elements.opponentSelectionError.textContent =
+      error.message || "Your opponent selection could not be loaded.";
+    elements.opponentSelectionError.hidden = false;
+  }
+}
+
+function openOpponentSelector(afterGame = false) {
+  elements.botSelectorHeading.textContent = "Choose before playing";
+  elements.botSelectionStatus.textContent = "Select Novice or Expert to begin.";
+  elements.lockedPill.hidden = true;
+  elements.opponentDialogHeading.textContent = afterGame
+    ? "Choose your next opponent"
+    : "Choose your opponent";
+  elements.opponentDialogDescription.textContent = afterGame
+    ? "The game is complete. Pick a new challenge, or review the match before playing again."
+    : "Pick a difficulty before the first move. Your choice stays locked for the entire game.";
+  elements.reviewFromSelectionButton.hidden = !(afterGame && game.history().length > 0);
+  elements.opponentSelectionError.hidden = true;
+  renderBotSelector();
+  if (!elements.opponentDialog.open) {
+    elements.opponentDialog.showModal();
+  }
+}
+
+async function releaseCompletedGame() {
+  if (!game.isGameOver()) {
+    return;
+  }
+  opponentSelected = false;
+  gameActive = false;
+  try {
+    window.localStorage.removeItem(OPPONENT_STORAGE_KEY);
+  } catch (error) {
+    // The server endpoint still releases the choice.
+  }
+  try {
+    await fetch("/end_game", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fen: game.fen() }),
+    });
+  } catch (error) {
+    // The selection screen remains available and a later choice will retry server state.
+  }
+  openOpponentSelector(true);
+  render();
+}
+
 async function startNewGame() {
   activeRequestId += 1;
   pendingController?.abort();
@@ -1460,8 +1560,13 @@ async function startNewGame() {
       throw new Error(data.error || "A new game could not be started.");
     }
 
+    opponentSelected = false;
     gameActive = false;
-    renderSelectedBot(data);
+    try {
+      window.localStorage.removeItem(OPPONENT_STORAGE_KEY);
+    } catch (error) {
+      // The server session has already been cleared.
+    }
   } catch (error) {
     lastError = error.message || "A new game could not be started.";
     elements.botSelectionStatus.textContent =
@@ -1472,6 +1577,19 @@ async function startNewGame() {
     render();
   }
 
+  resetLocalGameState();
+  openOpponentSelector(false);
+}
+
+function resetLocalGameState() {
+  activeRequestId += 1;
+  pendingController?.abort();
+  pendingController = null;
+  evaluationRequestId += 1;
+  evaluationController?.abort();
+  evaluationController = null;
+  analysisController?.abort();
+  analysisController = null;
   pendingPromotion = null;
   if (elements.promotionDialog.open) {
     elements.promotionDialog.close();

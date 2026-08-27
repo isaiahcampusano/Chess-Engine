@@ -11,6 +11,7 @@ class WebAppTests(unittest.TestCase):
     def setUp(self) -> None:
         web_app.app.config.update(TESTING=True)
         self.client = web_app.app.test_client()
+        self.client.post("/select_bot", json={"bot_id": "expert"})
 
     def test_home_page_is_served(self) -> None:
         with self.client.get("/") as response:
@@ -73,9 +74,13 @@ class WebAppTests(unittest.TestCase):
                 with self.subTest(element_id=element_id):
                     self.assertIn(b'id="' + element_id + b'"', response.data)
 
-    def test_home_page_includes_bot_selector(self) -> None:
+    def test_home_page_includes_explicit_opponent_selection_screen(self) -> None:
         with self.client.get("/") as response:
             self.assertEqual(response.status_code, 200)
+            self.assertIn(b'id="opponentDialog"', response.data)
+            self.assertIn(b"Choose your opponent", response.data)
+            self.assertIn(b"Play Novice", response.data)
+            self.assertIn(b"Play Expert", response.data)
             self.assertIn(b'data-bot="novice"', response.data)
             self.assertIn(b'data-bot="expert"', response.data)
             self.assertIn(b'id="botSelectionStatus"', response.data)
@@ -96,23 +101,26 @@ class WebAppTests(unittest.TestCase):
                 with self.subTest(theme=theme):
                     self.assertIn(b'value="' + theme + b'"', response.data)
 
-    def test_bot_selection_defaults_to_expert(self) -> None:
+    def test_bot_selection_is_required_for_a_new_session(self) -> None:
+        self.client.post("/new_game")
         response = self.client.get("/select_bot")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.get_json(),
             {
-                "status": "ok",
-                "selected": "expert",
-                "depth": 3,
-                "label": "Expert",
-                "active_game_bot": "expert",
+                "status": "selection_required",
+                "selected": None,
+                "depth": None,
+                "label": None,
+                "active_game_bot": None,
                 "game_active": False,
+                "needs_selection": True,
             },
         )
 
     def test_bot_selection_is_stored_in_session(self) -> None:
+        self.client.post("/new_game")
         response = self.client.post("/select_bot", json={"bot_id": "novice"})
 
         self.assertEqual(response.status_code, 200)
@@ -125,16 +133,16 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Invalid bot ID", response.get_json()["error"])
 
-    def test_new_game_uses_preferred_bot_and_opens_selection(self) -> None:
-        self.client.post("/select_bot", json={"bot_id": "novice"})
-
+    def test_new_game_clears_opponent_and_reopens_selection(self) -> None:
         response = self.client.post("/new_game")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["bot"], "novice")
+        self.assertIsNone(response.get_json()["bot"])
+        self.assertTrue(response.get_json()["needs_selection"])
         self.assertFalse(response.get_json()["game_active"])
         with self.client.session_transaction() as game_session:
-            self.assertEqual(game_session["active_game_bot"], "novice")
+            self.assertNotIn("active_game_bot", game_session)
+            self.assertNotIn("opponent_selected", game_session)
             self.assertFalse(game_session["game_started"])
 
     def test_static_assets_are_served(self) -> None:
@@ -205,6 +213,7 @@ class WebAppTests(unittest.TestCase):
             nodes=20,
             depth=1,
         )
+        self.client.post("/new_game")
         self.client.post("/select_bot", json={"bot_id": "novice"})
 
         with patch("app.choose_move_with_skill", return_value=result) as search:
@@ -213,7 +222,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(search.call_args.kwargs["blunder_chance"], 0.35)
 
-    def test_active_game_bot_stays_frozen_when_preference_changes(self) -> None:
+    def test_selected_opponent_is_locked_for_the_entire_game(self) -> None:
         board = chess.Board()
         novice_result = SearchResult(
             move=chess.Move.from_uci("e2e4"),
@@ -221,8 +230,8 @@ class WebAppTests(unittest.TestCase):
             nodes=20,
             depth=1,
         )
-        self.client.post("/select_bot", json={"bot_id": "novice"})
         self.client.post("/new_game")
+        self.client.post("/select_bot", json={"bot_id": "novice"})
 
         with patch("app.choose_move_with_skill", return_value=novice_result) as search:
             first_move = self.client.post("/move", json={"fen": board.fen()})
@@ -231,14 +240,14 @@ class WebAppTests(unittest.TestCase):
 
         self.assertEqual(first_move.status_code, 200)
         self.assertEqual(second_move.status_code, 200)
-        self.assertEqual(selection.get_json()["status"], "preference_saved")
-        self.assertEqual(selection.get_json()["current_game_bot"], "novice")
+        self.assertEqual(selection.status_code, 409)
+        self.assertIn("locked", selection.get_json()["error"])
         self.assertEqual(
             [call.kwargs["blunder_chance"] for call in search.call_args_list],
             [0.35, 0.35],
         )
 
-    def test_saved_preference_applies_to_the_next_new_game(self) -> None:
+    def test_new_game_requires_a_fresh_conscious_choice(self) -> None:
         board = chess.Board()
         result = SearchResult(
             move=chess.Move.from_uci("e2e4"),
@@ -246,19 +255,33 @@ class WebAppTests(unittest.TestCase):
             nodes=20,
             depth=3,
         )
-        self.client.post("/select_bot", json={"bot_id": "novice"})
         self.client.post("/new_game")
-        with patch("app.choose_best_move", return_value=result):
-            self.client.post("/move", json={"fen": board.fen()})
-        self.client.post("/select_bot", json={"bot_id": "expert"})
-
-        new_game_response = self.client.post("/new_game")
+        blocked_move = self.client.post("/move", json={"fen": board.fen()})
+        selection = self.client.post("/select_bot", json={"bot_id": "expert"})
         with patch("app.choose_best_move", return_value=result) as search:
             move_response = self.client.post("/move", json={"fen": board.fen()})
 
-        self.assertEqual(new_game_response.get_json()["bot"], "expert")
+        self.assertEqual(blocked_move.status_code, 409)
+        self.assertEqual(selection.status_code, 200)
         self.assertEqual(move_response.status_code, 200)
         self.assertEqual(search.call_args.kwargs["depth"], 3)
+
+    def test_end_game_releases_the_locked_opponent(self) -> None:
+        response = self.client.post(
+            "/end_game",
+            json={"fen": "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["needs_selection"])
+        self.assertTrue(self.client.get("/select_bot").get_json()["needs_selection"])
+
+    def test_end_game_cannot_release_an_unfinished_match(self) -> None:
+        response = self.client.post("/end_game", json={"fen": chess.STARTING_FEN})
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("stays locked", response.get_json()["error"])
+        self.assertFalse(self.client.get("/select_bot").get_json()["needs_selection"])
 
     def test_move_endpoint_rejects_missing_json(self) -> None:
         response = self.client.post("/move")
@@ -444,6 +467,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [3, 1])
 
     def test_novice_failure_skips_duplicate_depth_one_retry(self) -> None:
+        self.client.post("/new_game")
         self.client.post("/select_bot", json={"bot_id": "novice"})
 
         with patch(

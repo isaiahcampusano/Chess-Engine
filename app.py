@@ -34,7 +34,7 @@ def index():
 
 @app.route("/select_bot", methods=["GET", "POST"])
 def select_bot():
-    """Return or update the preferred opponent without changing an active game."""
+    """Return the current opponent or commit a choice for the next game."""
     if request.method == "POST":
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
@@ -43,29 +43,36 @@ def select_bot():
         bot_id = payload.get("bot_id")
         if bot_id not in BOTS:
             return _error("Invalid bot ID.", 400)
-        session["bot"] = bot_id
 
-        if session.get("game_started", False):
+        if session.get("opponent_selected", False):
             active_bot_id = _active_game_bot_id()
-            return jsonify(
-                {
-                    "status": "preference_saved",
-                    "selected": bot_id,
-                    "depth": BOTS[bot_id]["depth"],
-                    "label": BOTS[bot_id]["label"],
-                    "message": (
-                        f"{BOTS[bot_id]['label']} is saved for the next game."
-                    ),
-                    "current_game_bot": active_bot_id,
-                    "current_game_depth": BOTS[active_bot_id]["depth"],
-                    "current_game_label": BOTS[active_bot_id]["label"],
-                    "game_active": True,
-                }
+            return _error(
+                (
+                    f"{BOTS[active_bot_id]['label']} is locked for this game. "
+                    "Start a new game before choosing another opponent."
+                ),
+                409,
             )
 
+        session["bot"] = bot_id
         session["active_game_bot"] = bot_id
+        session["opponent_selected"] = True
+        session["game_started"] = False
 
-    bot_id = _selected_bot_id()
+    if not session.get("opponent_selected", False):
+        return jsonify(
+            {
+                "status": "selection_required",
+                "selected": None,
+                "depth": None,
+                "label": None,
+                "active_game_bot": None,
+                "game_active": False,
+                "needs_selection": True,
+            }
+        )
+
+    bot_id = _active_game_bot_id()
     return jsonify(
         {
             "status": "ok",
@@ -74,32 +81,51 @@ def select_bot():
             "label": BOTS[bot_id]["label"],
             "active_game_bot": _active_game_bot_id(),
             "game_active": session.get("game_started", False),
+            "needs_selection": False,
         }
     )
 
 
 @app.post("/new_game")
 def new_game():
-    """Open a new pre-game window and seed it with the preferred opponent."""
-    bot_id = _selected_bot_id()
-    session["active_game_bot"] = bot_id
-    session["game_started"] = False
+    """End the current match and require a fresh opponent choice."""
+    _clear_opponent_selection()
     return jsonify(
         {
             "status": "ok",
-            "selected": bot_id,
-            "bot": bot_id,
-            "depth": BOTS[bot_id]["depth"],
-            "label": BOTS[bot_id]["label"],
-            "active_game_bot": bot_id,
+            "selected": None,
+            "bot": None,
+            "depth": None,
+            "label": None,
+            "active_game_bot": None,
             "game_active": False,
+            "needs_selection": True,
         }
     )
+
+
+@app.post("/end_game")
+def end_game():
+    """Release the locked opponent after a completed browser game."""
+    payload = request.get_json(silent=True)
+    fen = payload.get("fen") if isinstance(payload, dict) else None
+    try:
+        board = chess.Board(fen) if isinstance(fen, str) else None
+    except ValueError:
+        board = None
+    if board is None or not board.is_game_over():
+        return _error("The opponent stays locked until the game is over.", 409)
+
+    _clear_opponent_selection()
+    return jsonify({"status": "ok", "needs_selection": True})
 
 
 @app.post("/move")
 def handle_move():
     """Return the engine's best move for a supplied FEN position."""
+    if not session.get("opponent_selected", False):
+        return _error("Choose an opponent before starting the game.", 409)
+
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return _error("Request body must be a JSON object.", 400)
@@ -117,7 +143,7 @@ def handle_move():
         return _error("The supplied FEN does not describe a valid chess position.", 400)
 
     if board.is_game_over():
-        session["game_started"] = False
+        _clear_opponent_selection()
         return jsonify(
             {
                 "engine_move": None,
@@ -216,7 +242,7 @@ def handle_move():
     outcome = position_after_move.outcome()
     game_over = outcome is not None
     if game_over:
-        session["game_started"] = False
+        _clear_opponent_selection()
 
     return jsonify(
         {
@@ -316,6 +342,13 @@ def _active_game_bot_id() -> str:
         bot_id = _selected_bot_id()
         session["active_game_bot"] = bot_id
     return bot_id
+
+
+def _clear_opponent_selection() -> None:
+    session.pop("bot", None)
+    session.pop("active_game_bot", None)
+    session.pop("opponent_selected", None)
+    session["game_started"] = False
 
 
 if __name__ == "__main__":

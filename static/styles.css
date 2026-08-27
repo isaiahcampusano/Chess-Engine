@@ -227,52 +227,27 @@ h1 {
 }
 
 .bot-selector-card h2 {
-  margin-bottom: 14px;
+  margin: 0;
   font-size: 1.15rem;
 }
 
-.bot-selector {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+.opponent-summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.bot-button {
-  display: grid;
-  gap: 4px;
-  padding: 13px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel-raised);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
-}
-
-.bot-button:hover:not(:disabled) {
-  border-color: rgba(214, 243, 106, 0.45);
-  transform: translateY(-1px);
-}
-
-.bot-button:focus-visible {
-  outline: 3px solid rgba(214, 243, 106, 0.4);
-  outline-offset: 2px;
-}
-
-.bot-button.active {
-  border-color: var(--accent);
-  background: rgba(214, 243, 106, 0.12);
-}
-
-.bot-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.bot-button span {
-  color: var(--muted);
-  font-size: 0.78rem;
+.locked-pill {
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .bot-selection-status {
@@ -280,6 +255,115 @@ h1 {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.opponent-dialog {
+  width: min(880px, calc(100% - 28px));
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.opponent-dialog::backdrop {
+  background: color-mix(in srgb, var(--page) 82%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.opponent-selection-card {
+  padding: clamp(26px, 5vw, 48px);
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  background: var(--panel-solid);
+  box-shadow: 0 36px 120px rgba(0, 0, 0, 0.56);
+  text-align: center;
+}
+
+.opponent-selection-card h2 {
+  margin-bottom: 12px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.2rem, 6vw, 4rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.opponent-dialog-description {
+  max-width: 570px;
+  margin: 0 auto 28px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.opponent-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.opponent-option {
+  display: grid;
+  min-height: 240px;
+  padding: clamp(22px, 4vw, 32px);
+  align-content: start;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel-raised);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.opponent-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
+  background: color-mix(in srgb, var(--panel-raised) 88%, var(--accent));
+  transform: translateY(-3px);
+}
+
+.opponent-option:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 3px;
+}
+
+.opponent-option:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.opponent-option-kicker {
+  color: var(--accent) !important;
+  font-size: 0.7rem !important;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.opponent-option strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.65rem, 4vw, 2.25rem);
+  font-weight: 500;
+}
+
+.opponent-option > span:not(.opponent-option-kicker) {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.opponent-option i {
+  align-self: end;
+  margin-top: auto;
+  color: var(--accent);
+  font-size: 0.83rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.opponent-selection-card > .alert {
+  text-align: left;
 }
 
 .board-column {
@@ -1338,6 +1422,14 @@ footer {
 
   .promotion-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .opponent-options {
+    grid-template-columns: 1fr;
+  }
+
+  .opponent-option {
+    min-height: 190px;
   }
 
   .analysis-panel {
