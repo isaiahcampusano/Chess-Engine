@@ -23,6 +23,17 @@
           </p>
         </div>
         <div class="hero-controls">
+          <div class="theme-selector">
+            <label for="themeSelect">Theme</label>
+            <select id="themeSelect" aria-describedby="themeStatus">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="sepia">Sepia</option>
+              <option value="ocean">Ocean</option>
+              <option value="forest">Forest</option>
+            </select>
+            <span id="themeStatus" class="sr-only" role="status" aria-live="polite"></span>
+          </div>
           <button
             id="soundToggle"
             class="sound-toggle"

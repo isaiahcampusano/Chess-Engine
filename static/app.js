@@ -22,6 +22,109 @@ const LOSS_SOUND_TEST_FEN = "8/8/8/8/8/5kq1/8/R6K w - - 0 1";
 const DRAW_SOUND_TEST_FEN = "7k/P7/8/8/8/8/8/7K w - - 0 1";
 const PROMOTION_PIECES = new Set(["q", "r", "b", "n"]);
 const BOARD_FILES = "abcdefgh";
+const THEME_STORAGE_KEY = "chess-theme";
+const THEMES = {
+  dark: {
+    "--page": "#0c120f",
+    "--page-soft": "#121b16",
+    "--panel": "rgba(27, 38, 31, 0.92)",
+    "--panel-solid": "#1b261f",
+    "--panel-raised": "#223027",
+    "--line": "rgba(225, 235, 227, 0.11)",
+    "--text": "#f4f7f4",
+    "--muted": "#9dad9f",
+    "--accent": "#d6f36a",
+    "--accent-strong": "#bde13e",
+    "--danger": "#ff8f7b",
+    "--light-square": "#e5ead6",
+    "--dark-square": "#6f8866",
+    "--shadow": "0 28px 80px rgba(0, 0, 0, 0.32)",
+    "--page-glow": "rgba(123, 156, 104, 0.15)",
+    "--accent-glow": "rgba(214, 243, 106, 0.07)",
+    "--control-tint": "rgba(255, 255, 255, 0.035)",
+    "--color-scheme": "dark",
+  },
+  light: {
+    "--page": "#f5f0eb",
+    "--page-soft": "#e8e0d8",
+    "--panel": "rgba(255, 252, 245, 0.94)",
+    "--panel-solid": "#fffaf2",
+    "--panel-raised": "#e8e0d8",
+    "--line": "rgba(60, 50, 40, 0.15)",
+    "--text": "#2c241c",
+    "--muted": "#6b5f54",
+    "--accent": "#4a7c3f",
+    "--accent-strong": "#3a6a30",
+    "--danger": "#b53629",
+    "--light-square": "#f0d9b5",
+    "--dark-square": "#b58863",
+    "--shadow": "0 28px 80px rgba(55, 42, 28, 0.15)",
+    "--page-glow": "rgba(181, 136, 99, 0.18)",
+    "--accent-glow": "rgba(74, 124, 63, 0.1)",
+    "--control-tint": "rgba(44, 36, 28, 0.035)",
+    "--color-scheme": "light",
+  },
+  sepia: {
+    "--page": "#211b14",
+    "--page-soft": "#2b231a",
+    "--panel": "rgba(55, 43, 31, 0.94)",
+    "--panel-solid": "#372b1f",
+    "--panel-raised": "#493827",
+    "--line": "rgba(246, 225, 190, 0.14)",
+    "--text": "#f4e8d2",
+    "--muted": "#c1aa88",
+    "--accent": "#e0b45d",
+    "--accent-strong": "#c99535",
+    "--danger": "#ef8d72",
+    "--light-square": "#ead8b5",
+    "--dark-square": "#9b7045",
+    "--shadow": "0 28px 80px rgba(9, 6, 3, 0.4)",
+    "--page-glow": "rgba(178, 128, 73, 0.17)",
+    "--accent-glow": "rgba(224, 180, 93, 0.08)",
+    "--control-tint": "rgba(255, 239, 213, 0.04)",
+    "--color-scheme": "dark",
+  },
+  ocean: {
+    "--page": "#07151c",
+    "--page-soft": "#0c202a",
+    "--panel": "rgba(15, 43, 55, 0.94)",
+    "--panel-solid": "#0f2b37",
+    "--panel-raised": "#173c49",
+    "--line": "rgba(207, 238, 244, 0.13)",
+    "--text": "#effbfc",
+    "--muted": "#91b7bf",
+    "--accent": "#5ee4d4",
+    "--accent-strong": "#31cbbb",
+    "--danger": "#ff8b82",
+    "--light-square": "#d7eef0",
+    "--dark-square": "#4d8996",
+    "--shadow": "0 28px 80px rgba(0, 7, 12, 0.42)",
+    "--page-glow": "rgba(41, 134, 153, 0.2)",
+    "--accent-glow": "rgba(94, 228, 212, 0.09)",
+    "--control-tint": "rgba(224, 251, 255, 0.04)",
+    "--color-scheme": "dark",
+  },
+  forest: {
+    "--page": "#10170d",
+    "--page-soft": "#182114",
+    "--panel": "rgba(31, 47, 25, 0.94)",
+    "--panel-solid": "#1f2f19",
+    "--panel-raised": "#2b3e23",
+    "--line": "rgba(229, 239, 213, 0.13)",
+    "--text": "#f3f7eb",
+    "--muted": "#a8b99a",
+    "--accent": "#f0c96a",
+    "--accent-strong": "#dbaf43",
+    "--danger": "#f28d75",
+    "--light-square": "#e1e8c8",
+    "--dark-square": "#52704a",
+    "--shadow": "0 28px 80px rgba(3, 8, 2, 0.38)",
+    "--page-glow": "rgba(85, 124, 69, 0.2)",
+    "--accent-glow": "rgba(240, 201, 106, 0.08)",
+    "--control-tint": "rgba(245, 255, 235, 0.04)",
+    "--color-scheme": "dark",
+  },
+};
 const PIECE_NAMES = {
   p: "pawn",
   n: "knight",
@@ -164,6 +267,8 @@ const elements = {
   soundIcon: document.querySelector("#soundIcon"),
   soundLabel: document.querySelector("#soundLabel"),
   soundToggle: document.querySelector("#soundToggle"),
+  themeSelect: document.querySelector("#themeSelect"),
+  themeStatus: document.querySelector("#themeStatus"),
 };
 
 let game = createInitialGame();
@@ -219,6 +324,8 @@ const analysisState = {
 };
 
 function initialize() {
+  initializeTheme();
+
   if (typeof window.jQuery !== "function" || typeof window.Chessboard !== "function") {
     showDependencyError();
     return;
@@ -245,6 +352,7 @@ function initialize() {
   });
   elements.newGameButton.addEventListener("click", handleNewGame);
   elements.soundToggle.addEventListener("click", handleSoundToggle);
+  elements.themeSelect.addEventListener("change", (event) => applyTheme(event.target.value));
   elements.reviewGameButton.addEventListener("click", requestGameAnalysis);
   elements.closeAnalysisButton.addEventListener("click", closeGameAnalysis);
   elements.previousAnalysisButton.addEventListener("click", () => {
@@ -279,6 +387,39 @@ function initialize() {
   renderSoundToggle();
   render();
   startNewGame();
+}
+
+function initializeTheme() {
+  let savedTheme = "dark";
+  try {
+    savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY) || savedTheme;
+  } catch (error) {
+    // Storage can be unavailable in private or restricted browsing contexts.
+  }
+  applyTheme(THEMES[savedTheme] ? savedTheme : "dark", false);
+}
+
+function applyTheme(themeName, persist = true) {
+  const theme = THEMES[themeName];
+  if (!theme) return;
+
+  Object.entries(theme).forEach(([property, value]) => {
+    document.documentElement.style.setProperty(property, value);
+  });
+  document.documentElement.dataset.theme = themeName;
+  elements.themeSelect.value = themeName;
+  elements.themeStatus.textContent = `${elements.themeSelect.selectedOptions[0].text} theme applied.`;
+
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  themeColor?.setAttribute("content", theme["--page"]);
+
+  if (persist) {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, themeName);
+    } catch (error) {
+      // The visual theme still works when preference storage is unavailable.
+    }
+  }
 }
 
 function handleNewGame() {

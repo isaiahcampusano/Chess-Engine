@@ -87,6 +87,15 @@ class WebAppTests(unittest.TestCase):
             self.assertIn(b'aria-pressed="false"', response.data)
             self.assertIn(b'id="soundLabel"', response.data)
 
+    def test_home_page_includes_theme_selector(self) -> None:
+        with self.client.get("/") as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'id="themeSelect"', response.data)
+            self.assertIn(b'id="themeStatus"', response.data)
+            for theme in (b"dark", b"light", b"sepia", b"ocean", b"forest"):
+                with self.subTest(theme=theme):
+                    self.assertIn(b'value="' + theme + b'"', response.data)
+
     def test_bot_selection_defaults_to_expert(self) -> None:
         response = self.client.get("/select_bot")
 
