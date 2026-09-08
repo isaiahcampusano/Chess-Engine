@@ -11,7 +11,7 @@ class WebAppTests(unittest.TestCase):
     def setUp(self) -> None:
         web_app.app.config.update(TESTING=True)
         self.client = web_app.app.test_client()
-        self.client.post("/select_bot", json={"bot_id": "expert"})
+        self.client.post("/select_bot", json={"bot_id": "professor"})
 
     def test_home_page_is_served(self) -> None:
         with self.client.get("/") as response:
@@ -79,10 +79,17 @@ class WebAppTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(b'id="opponentDialog"', response.data)
             self.assertIn(b"Choose your opponent", response.data)
-            self.assertIn(b"Play Novice", response.data)
-            self.assertIn(b"Play Expert", response.data)
-            self.assertIn(b'data-bot="novice"', response.data)
-            self.assertIn(b'data-bot="expert"', response.data)
+            for bot_id, label in (
+                (b"rookie", b"Rookie Randy"),
+                (b"hustler", b"Sandbag Sam"),
+                (b"professor", b"The Professor"),
+                (b"martin", b"Martin"),
+            ):
+                with self.subTest(bot_id=bot_id):
+                    self.assertIn(b'data-bot="' + bot_id + b'"', response.data)
+                    self.assertIn(label, response.data)
+            for element_id in (b"opponentAvatar", b"botCommentary", b"capturedPieces"):
+                self.assertIn(b'id="' + element_id + b'"', response.data)
             self.assertIn(b'id="botSelectionStatus"', response.data)
 
     def test_home_page_includes_accessible_sound_toggle(self) -> None:
@@ -116,16 +123,64 @@ class WebAppTests(unittest.TestCase):
                 "active_game_bot": None,
                 "game_active": False,
                 "needs_selection": True,
+                "commentary": None,
+                "avatar": None,
+                "idle_lines": [],
             },
         )
 
     def test_bot_selection_is_stored_in_session(self) -> None:
         self.client.post("/new_game")
-        response = self.client.post("/select_bot", json={"bot_id": "novice"})
+        response = self.client.post("/select_bot", json={"bot_id": "rookie"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["selected"], "novice")
-        self.assertEqual(self.client.get("/select_bot").get_json()["selected"], "novice")
+        self.assertEqual(response.get_json()["selected"], "rookie")
+        self.assertEqual(self.client.get("/select_bot").get_json()["selected"], "rookie")
+
+    def test_all_four_personalities_keep_the_expected_skill_settings(self) -> None:
+        expected = {
+            "rookie": (1, 0.35),
+            "hustler": (1, 0.35),
+            "professor": (3, 0.0),
+            "martin": (3, 0.0),
+        }
+        self.assertEqual(set(web_app.BOTS), set(expected))
+        for bot_id, (depth, blunder_chance) in expected.items():
+            with self.subTest(bot_id=bot_id):
+                self.assertEqual(web_app.BOTS[bot_id]["depth"], depth)
+                self.assertEqual(web_app.BOTS[bot_id]["blunder_chance"], blunder_chance)
+
+    def test_selection_returns_character_content(self) -> None:
+        self.client.post("/new_game")
+        response = self.client.post("/select_bot", json={"bot_id": "martin"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["avatar"], "martin.png")
+        self.assertEqual(payload["tier"], "expert")
+        self.assertIn(payload["commentary"], web_app.PERSONALITIES["martin"].lines["game_start"])
+        self.assertEqual(payload["idle_lines"], web_app.PERSONALITIES["martin"].lines["idle"])
+
+    def test_legacy_bot_ids_are_rejected(self) -> None:
+        for bot_id in ("novice", "expert"):
+            with self.subTest(bot_id=bot_id):
+                self.client.post("/new_game")
+                response = self.client.post("/select_bot", json={"bot_id": bot_id})
+                self.assertEqual(response.status_code, 400)
+
+    def test_stale_legacy_session_requires_a_new_selection(self) -> None:
+        with self.client.session_transaction() as game_session:
+            game_session["bot"] = "expert"
+            game_session["active_game_bot"] = "expert"
+            game_session["opponent_selected"] = True
+            game_session["commentary_eval"] = 42
+
+        response = self.client.get("/select_bot")
+
+        self.assertTrue(response.get_json()["needs_selection"])
+        with self.client.session_transaction() as game_session:
+            self.assertNotIn("active_game_bot", game_session)
+            self.assertNotIn("commentary_eval", game_session)
 
     def test_bot_selection_rejects_invalid_bot(self) -> None:
         response = self.client.post("/select_bot", json={"bot_id": "grandmaster"})
@@ -143,6 +198,9 @@ class WebAppTests(unittest.TestCase):
         with self.client.session_transaction() as game_session:
             self.assertNotIn("active_game_bot", game_session)
             self.assertNotIn("opponent_selected", game_session)
+            self.assertNotIn("commentary_eval", game_session)
+            self.assertNotIn("commentary_tick", game_session)
+            self.assertNotIn("last_commentary", game_session)
             self.assertFalse(game_session["game_started"])
 
     def test_static_assets_are_served(self) -> None:
@@ -150,6 +208,12 @@ class WebAppTests(unittest.TestCase):
             with self.subTest(path=path):
                 with self.client.get(path) as response:
                     self.assertEqual(response.status_code, 200)
+
+        for bot_id in web_app.PERSONALITIES:
+            with self.subTest(bot_id=bot_id):
+                response = self.client.get(f"/static/avatars/{bot_id}.png")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content_type, "image/png")
 
     def test_sound_assets_are_served(self) -> None:
         sound_names = (
@@ -184,8 +248,9 @@ class WebAppTests(unittest.TestCase):
             response = self.client.post("/move", json={"fen": board.fen()})
 
         self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
         self.assertEqual(
-            response.get_json(),
+            payload,
             {
                 "engine_move": "e7e5",
                 "score": 24,
@@ -198,12 +263,85 @@ class WebAppTests(unittest.TestCase):
                 "is_castle": False,
                 "is_promotion": False,
                 "outcome": None,
+                "commentary": None,
+                "avatar": "professor.png",
             },
         )
         searched_board = search.call_args.args[0]
         self.assertEqual(searched_board.fen(), board.fen())
         self.assertEqual(search.call_args.kwargs["depth"], 3)
         self.assertEqual(search.call_args.kwargs["time_limit_seconds"], 8.0)
+
+    def test_player_blunder_commentary_uses_static_evaluations(self) -> None:
+        board = chess.Board()
+        board.push_uci("e2e4")
+        result = SearchResult(move=chess.Move.from_uci("e7e5"), score=0, nodes=1, depth=3)
+        with self.client.session_transaction() as game_session:
+            game_session["commentary_eval"] = 100
+
+        with (
+            patch("app.evaluate_board", side_effect=[-100, -100]),
+            patch("app.choose_best_move", return_value=result),
+            patch("app._pick_commentary", return_value="That loses material.") as speak,
+        ):
+            response = self.client.post("/move", json={"fen": board.fen()})
+
+        self.assertEqual(response.get_json()["commentary"], "That loses material.")
+        speak.assert_called_once_with("professor", "player_blunder")
+
+    def test_rookie_notices_a_static_evaluation_blunder(self) -> None:
+        self.client.post("/new_game")
+        self.client.post("/select_bot", json={"bot_id": "rookie"})
+        board = chess.Board()
+        board.push_uci("e2e4")
+        result = SearchResult(move=chess.Move.from_uci("e7e5"), score=0, nodes=1, depth=1)
+
+        with (
+            patch("app.evaluate_board", side_effect=[0, 200]),
+            patch("app.choose_move_with_skill", return_value=result),
+            patch("app._pick_commentary", return_value="I meant to do that.") as speak,
+        ):
+            response = self.client.post("/move", json={"fen": board.fen()})
+
+        self.assertEqual(response.get_json()["commentary"], "I meant to do that.")
+        speak.assert_called_once_with("rookie", "bot_blunder_aware")
+
+    def test_position_commentary_only_fires_every_second_bot_reply(self) -> None:
+        board = chess.Board()
+        board.push_uci("e2e4")
+        result = SearchResult(move=chess.Move.from_uci("e7e5"), score=200, nodes=1, depth=3)
+
+        with (
+            patch("app.evaluate_board", return_value=0),
+            patch("app.choose_best_move", return_value=result),
+            patch("app._pick_commentary", return_value="The position speaks for itself.") as speak,
+        ):
+            first = self.client.post("/move", json={"fen": board.fen()})
+            second = self.client.post("/move", json={"fen": board.fen()})
+
+        self.assertIsNone(first.get_json()["commentary"])
+        self.assertEqual(second.get_json()["commentary"], "The position speaks for itself.")
+        speak.assert_called_once_with("professor", "bot_winning")
+
+    def test_checkmate_commentary_has_highest_priority(self) -> None:
+        board = chess.Board("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1")
+        result = SearchResult(
+            move=chess.Move.from_uci("f7g7"),
+            score=100_000,
+            nodes=1,
+            depth=3,
+        )
+        with self.client.session_transaction() as game_session:
+            game_session["commentary_eval"] = 1_000
+
+        with (
+            patch("app.choose_best_move", return_value=result),
+            patch("app._pick_commentary", return_value="Class dismissed.") as speak,
+        ):
+            response = self.client.post("/move", json={"fen": board.fen()})
+
+        self.assertTrue(response.get_json()["game_over"])
+        speak.assert_called_once_with("professor", "checkmate_win")
 
     def test_move_endpoint_uses_selected_bot_skill(self) -> None:
         board = chess.Board()
@@ -214,7 +352,7 @@ class WebAppTests(unittest.TestCase):
             depth=1,
         )
         self.client.post("/new_game")
-        self.client.post("/select_bot", json={"bot_id": "novice"})
+        self.client.post("/select_bot", json={"bot_id": "rookie"})
 
         with patch("app.choose_move_with_skill", return_value=result) as search:
             response = self.client.post("/move", json={"fen": board.fen()})
@@ -231,11 +369,11 @@ class WebAppTests(unittest.TestCase):
             depth=1,
         )
         self.client.post("/new_game")
-        self.client.post("/select_bot", json={"bot_id": "novice"})
+        self.client.post("/select_bot", json={"bot_id": "rookie"})
 
         with patch("app.choose_move_with_skill", return_value=novice_result) as search:
             first_move = self.client.post("/move", json={"fen": board.fen()})
-            selection = self.client.post("/select_bot", json={"bot_id": "expert"})
+            selection = self.client.post("/select_bot", json={"bot_id": "professor"})
             second_move = self.client.post("/move", json={"fen": board.fen()})
 
         self.assertEqual(first_move.status_code, 200)
@@ -257,7 +395,7 @@ class WebAppTests(unittest.TestCase):
         )
         self.client.post("/new_game")
         blocked_move = self.client.post("/move", json={"fen": board.fen()})
-        selection = self.client.post("/select_bot", json={"bot_id": "expert"})
+        selection = self.client.post("/select_bot", json={"bot_id": "professor"})
         with patch("app.choose_best_move", return_value=result) as search:
             move_response = self.client.post("/move", json={"fen": board.fen()})
 
@@ -275,6 +413,17 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["needs_selection"])
         self.assertTrue(self.client.get("/select_bot").get_json()["needs_selection"])
+
+    def test_end_game_returns_player_delivered_checkmate_commentary(self) -> None:
+        with patch("app._pick_commentary", return_value="Well played. Genuinely.") as speak:
+            response = self.client.post(
+                "/end_game",
+                json={"fen": "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1"},
+            )
+
+        self.assertEqual(response.get_json()["avatar"], "professor.png")
+        self.assertEqual(response.get_json()["commentary"], "Well played. Genuinely.")
+        speak.assert_called_once_with("professor", "checkmate_loss")
 
     def test_end_game_cannot_release_an_unfinished_match(self) -> None:
         response = self.client.post("/end_game", json={"fen": chess.STARTING_FEN})
@@ -316,8 +465,13 @@ class WebAppTests(unittest.TestCase):
         response = self.client.post("/move", json={"fen": checkmate_fen})
 
         self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn(payload["commentary"], web_app.PERSONALITIES["professor"].lines["checkmate_loss"])
+        self.assertEqual(payload["avatar"], "professor.png")
+        payload.pop("commentary")
+        payload.pop("avatar")
         self.assertEqual(
-            response.get_json(),
+            payload,
             {
                 "engine_move": None,
                 "score": 0,
@@ -466,9 +620,9 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.get_json()["depth"], 1)
         self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [3, 1])
 
-    def test_novice_failure_skips_duplicate_depth_one_retry(self) -> None:
+    def test_rookie_failure_skips_duplicate_depth_one_retry(self) -> None:
         self.client.post("/new_game")
-        self.client.post("/select_bot", json={"bot_id": "novice"})
+        self.client.post("/select_bot", json={"bot_id": "rookie"})
 
         with patch(
             "app.choose_move_with_skill",

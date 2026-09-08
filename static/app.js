@@ -13,6 +13,7 @@ const CLIENT_TIMEOUT_MS = 12_000;
 const ANALYSIS_TIMEOUT_MS = 28_000;
 const EVALUATION_TIMEOUT_MS = 4_000;
 const EVALUATION_RANGE_CP = 500;
+const IDLE_COMMENTARY_INTERVAL_MS = 2_800;
 const PROMOTION_TEST_FEN = "8/P6k/8/8/8/8/7p/7K w - - 0 1";
 const PROMOTION_CAPTURE_TEST_FEN = "1r6/P6k/8/8/8/8/7p/7K w - - 0 1";
 const ANALYSIS_TEST_FEN = "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1";
@@ -134,6 +135,13 @@ const PIECE_NAMES = {
   q: "queen",
   k: "king",
 };
+const CAPTURED_PIECE_SYMBOLS = {
+  p: "♙",
+  n: "♘",
+  b: "♗",
+  r: "♖",
+  q: "♕",
+};
 
 class MovePredictor {
   constructor(boardState) {
@@ -224,6 +232,7 @@ const elements = {
   analysisResult: document.querySelector("#analysisResult"),
   board: document.querySelector("#myBoard"),
   boardOverlay: document.querySelector("#boardOverlay"),
+  botCommentary: document.querySelector("#botCommentary"),
   botButtons: document.querySelectorAll("[data-bot]"),
   botSelectorHeading: document.querySelector("#botSelectorHeading"),
   botSelectionStatus: document.querySelector("#botSelectionStatus"),
@@ -241,16 +250,19 @@ const elements = {
   evalBlackFill: document.querySelector("#evalBlackFill"),
   evalWhiteFill: document.querySelector("#evalWhiteFill"),
   lockedPill: document.querySelector("#lockedPill"),
+  capturedPieces: document.querySelector("#capturedPieces"),
   moveCount: document.querySelector("#moveCount"),
   moveHistory: document.querySelector("#moveHistory"),
   newGameButton: document.querySelector("#newGameButton"),
   nextAnalysisButton: document.querySelector("#nextAnalysisButton"),
   nodesValue: document.querySelector("#nodesValue"),
   opponentName: document.querySelector("#opponentName"),
+  opponentAvatar: document.querySelector("#opponentAvatar"),
   opponentDialog: document.querySelector("#opponentDialog"),
   opponentDialogDescription: document.querySelector("#opponentDialogDescription"),
   opponentDialogHeading: document.querySelector("#opponentDialogHeading"),
   opponentSelectionError: document.querySelector("#opponentSelectionError"),
+  opponentTier: document.querySelector("#opponentTier"),
   promotionDialog: document.querySelector("#promotionDialog"),
   promotionOptions: document.querySelectorAll("[data-promotion]"),
   planMovesButton: document.querySelector("#planMovesButton"),
@@ -308,11 +320,20 @@ let lastMove = null;
 let interactionMessage = "";
 let engineMoveAnnouncement = "";
 let dragInProgress = false;
-let selectedBot = { id: "expert", label: "Expert", depth: 3 };
+let selectedBot = {
+  id: "professor",
+  label: "The Professor",
+  tier: "expert",
+  depth: 3,
+  avatar: "professor.png",
+  idleLines: [],
+};
 let opponentSelected = false;
 let gameActive = false;
 let isStartingGame = false;
 let botRequestInFlight = false;
+let currentCommentary = "";
+let idleCommentaryTimer = null;
 const planningState = {
   isPlanning: false,
   selectedSquare: null,
@@ -482,8 +503,9 @@ async function selectBot(event) {
     } catch (error) {
       // The server session still preserves the choice when storage is unavailable.
     }
-    renderSelectedBot(data);
     resetLocalGameState();
+    renderSelectedBot(data);
+    render();
     elements.opponentDialog.close();
   } catch (error) {
     const message = error.message || "The opponent could not be changed. Please try again.";
@@ -501,7 +523,12 @@ function renderSelectedBot(data) {
   selectedBot = {
     id: data.selected,
     label: data.label,
+    tier: data.tier || (depth <= 1 ? "novice" : "expert"),
     depth,
+    avatar: data.avatar || `${data.selected}.png`,
+    idleLines: Array.isArray(data.idle_lines)
+      ? data.idle_lines.filter((line) => typeof line === "string" && line.trim())
+      : [],
   };
   elements.botButtons.forEach((button) => {
     const isActive = button.dataset.bot === selectedBot.id;
@@ -510,14 +537,19 @@ function renderSelectedBot(data) {
   });
   elements.botSelectionStatus.textContent =
     `${selectedBot.label} is locked for this game at depth ${depth}.`;
-  elements.botSelectorHeading.textContent = `${selectedBot.label} Engine`;
+  elements.botSelectorHeading.textContent = selectedBot.label;
   elements.lockedPill.hidden = false;
   elements.depthBadgeValue.textContent = String(depth);
   elements.depthBadge.setAttribute(
     "aria-label",
     `${selectedBot.label} engine search depth ${depth}`,
   );
-  elements.opponentName.textContent = `${selectedBot.label} Engine`;
+  elements.opponentName.textContent = selectedBot.label;
+  elements.opponentTier.textContent = `${selectedBot.tier} · Plays Black`;
+  elements.opponentAvatar.src = `/static/avatars/${encodeURIComponent(selectedBot.avatar)}`;
+  elements.opponentAvatar.alt = `${selectedBot.label} avatar`;
+  elements.opponentAvatar.hidden = false;
+  updateCommentary(data.commentary);
 }
 
 function renderBotSelector() {
@@ -530,6 +562,47 @@ function renderBotLockMessage() {
   if (opponentSelected) {
     elements.botSelectionStatus.textContent =
       `${selectedBot.label} is locked for this game at depth ${selectedBot.depth}.`;
+  }
+}
+
+function updateCommentary(line) {
+  if (typeof line !== "string" || !line.trim()) {
+    return;
+  }
+  currentCommentary = line.trim();
+  elements.botCommentary.textContent = currentCommentary;
+  elements.botCommentary.hidden = false;
+}
+
+function clearCommentary() {
+  currentCommentary = "";
+  elements.botCommentary.textContent = "";
+  elements.botCommentary.hidden = true;
+}
+
+function showNextIdleCommentary() {
+  const alternatives = selectedBot.idleLines.filter((line) => line !== currentCommentary);
+  const pool = alternatives.length > 0 ? alternatives : selectedBot.idleLines;
+  if (pool.length > 0) {
+    updateCommentary(pool[Math.floor(Math.random() * pool.length)]);
+  }
+}
+
+function startIdleCommentary() {
+  stopIdleCommentary();
+  showNextIdleCommentary();
+  if (selectedBot.idleLines.length > 1) {
+    idleCommentaryTimer = window.setInterval(
+      showNextIdleCommentary,
+      IDLE_COMMENTARY_INTERVAL_MS,
+    );
+  }
+}
+
+function stopIdleCommentary() {
+  if (idleCommentaryTimer !== null) {
+    window.clearInterval(idleCommentaryTimer);
+    idleCommentaryTimer = null;
   }
 }
 
@@ -1130,6 +1203,7 @@ async function requestEngineMove() {
     return;
   }
 
+  const commentaryBeforeThinking = currentCommentary;
   const requestId = ++activeRequestId;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
@@ -1137,6 +1211,7 @@ async function requestEngineMove() {
   pendingController = controller;
   isThinking = true;
   lastError = "";
+  startIdleCommentary();
   render();
 
   try {
@@ -1154,6 +1229,15 @@ async function requestEngineMove() {
 
     if (requestId !== activeRequestId) {
       return;
+    }
+
+    stopIdleCommentary();
+    if (typeof data.commentary === "string" && data.commentary.trim()) {
+      updateCommentary(data.commentary);
+    } else if (commentaryBeforeThinking) {
+      updateCommentary(commentaryBeforeThinking);
+    } else {
+      clearCommentary();
     }
 
     if (!data.engine_move) {
@@ -1203,8 +1287,14 @@ async function requestEngineMove() {
       error.name === "AbortError"
         ? "The engine request timed out. You can retry from this position."
         : error.message || "The engine could not calculate a move.";
+    if (commentaryBeforeThinking) {
+      updateCommentary(commentaryBeforeThinking);
+    } else {
+      clearCommentary();
+    }
   } finally {
     window.clearTimeout(timer);
+    stopIdleCommentary();
     if (requestId === activeRequestId) {
       isThinking = false;
       pendingController = null;
@@ -1433,9 +1523,6 @@ function closeGameAnalysis() {
   analysisState.selectedPly = 0;
   syncBoard(false);
   render();
-  if (!opponentSelected && game.isGameOver()) {
-    openOpponentSelector(true);
-  }
 }
 
 function selectAnalysisPly(ply) {
@@ -1499,14 +1586,14 @@ async function loadOpponentSelection() {
 
 function openOpponentSelector(afterGame = false) {
   elements.botSelectorHeading.textContent = "Choose before playing";
-  elements.botSelectionStatus.textContent = "Select Novice or Expert to begin.";
+  elements.botSelectionStatus.textContent = "Select a character to begin.";
   elements.lockedPill.hidden = true;
   elements.opponentDialogHeading.textContent = afterGame
     ? "Choose your next opponent"
     : "Choose your opponent";
   elements.opponentDialogDescription.textContent = afterGame
     ? "The game is complete. Pick a new challenge, or review the match before playing again."
-    : "Pick a difficulty before the first move. Your choice stays locked for the entire game.";
+    : "Pick a character before the first move. Your choice stays locked for the entire game.";
   elements.reviewFromSelectionButton.hidden = !(afterGame && game.history().length > 0);
   elements.opponentSelectionError.hidden = true;
   renderBotSelector();
@@ -1527,15 +1614,21 @@ async function releaseCompletedGame() {
     // The server endpoint still releases the choice.
   }
   try {
-    await fetch("/end_game", {
+    const response = await fetch("/end_game", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fen: game.fen() }),
     });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) {
+      updateCommentary(data.commentary);
+    }
   } catch (error) {
-    // The selection screen remains available and a later choice will retry server state.
+    // New game will retry server state if releasing the completed match failed.
   }
-  openOpponentSelector(true);
+  elements.lockedPill.hidden = true;
+  elements.botSelectionStatus.textContent =
+    "Game complete. Review the board or choose New game for another opponent.";
   render();
 }
 
@@ -1585,6 +1678,13 @@ function resetLocalGameState() {
   activeRequestId += 1;
   pendingController?.abort();
   pendingController = null;
+  stopIdleCommentary();
+  clearCommentary();
+  elements.opponentAvatar.removeAttribute("src");
+  elements.opponentAvatar.alt = "";
+  elements.opponentAvatar.hidden = true;
+  elements.opponentName.textContent = "Choose opponent";
+  elements.opponentTier.textContent = "Plays Black";
   evaluationRequestId += 1;
   evaluationController?.abort();
   evaluationController = null;
@@ -1710,6 +1810,23 @@ function updateEvalBar(data) {
   elements.evalBar.setAttribute("aria-valuetext", description);
 }
 
+function renderCapturedPieces() {
+  const captures = game
+    .history({ verbose: true })
+    .filter((move) => move.color === "b" && move.captured)
+    .map((move) => move.captured);
+  elements.capturedPieces.textContent = captures
+    .map((piece) => CAPTURED_PIECE_SYMBOLS[piece] || "")
+    .join("");
+  const names = captures.map((piece) => PIECE_NAMES[piece] || "piece");
+  elements.capturedPieces.setAttribute(
+    "aria-label",
+    names.length > 0
+      ? `${selectedBot.label} captured ${names.join(", ")}`
+      : "No pieces captured by the opponent",
+  );
+}
+
 function render() {
   renderStatus();
   renderHistory();
@@ -1717,6 +1834,7 @@ function render() {
   renderPlanningPanel();
   renderAnalysisPanel();
   renderBotSelector();
+  renderCapturedPieces();
 
   const canRetry =
     !planningState.isPlanning &&

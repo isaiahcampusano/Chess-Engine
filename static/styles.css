@@ -304,7 +304,7 @@ h1 {
 
 .opponent-option {
   display: grid;
-  min-height: 240px;
+  min-height: 270px;
   padding: clamp(22px, 4vw, 32px);
   align-content: start;
   gap: 11px;
@@ -315,6 +315,15 @@ h1 {
   cursor: pointer;
   text-align: left;
   transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.opponent-option img {
+  width: 70px;
+  height: 70px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel-raised) 82%, var(--accent));
+  object-fit: cover;
 }
 
 .opponent-option:hover:not(:disabled) {
@@ -377,12 +386,100 @@ h1 {
   gap: 12px;
 }
 
-.player-strip.opponent {
-  margin-bottom: 12px;
-}
-
 .player-strip:not(.opponent) {
   margin-top: 12px;
+}
+
+.opponent-personality {
+  display: grid;
+  grid-template-columns: clamp(64px, 9vw, 78px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 82px;
+  margin-bottom: 14px;
+  align-items: start;
+}
+
+.opponent-avatar {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-raised);
+  object-fit: cover;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+}
+
+.opponent-chat {
+  min-width: 0;
+}
+
+.opponent-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  gap: 12px;
+}
+
+.opponent-identity strong,
+.opponent-identity span {
+  display: block;
+}
+
+.opponent-identity strong {
+  font-size: 0.94rem;
+}
+
+.opponent-identity > div span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
+.speech-bubble {
+  position: relative;
+  min-height: 44px;
+  margin: 8px 0 0;
+  padding: 12px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px 16px 16px 16px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: clamp(0.8rem, 1.8vw, 0.92rem);
+  line-height: 1.45;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.speech-bubble::before {
+  position: absolute;
+  top: -1px;
+  left: -9px;
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-raised);
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
+  content: "";
+}
+
+.captured-pieces {
+  display: flex;
+  min-height: 24px;
+  margin-top: 5px;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.captured-pieces:empty::after {
+  color: var(--muted);
+  content: "No captures yet";
+  font-family: inherit;
+  font-size: 0.68rem;
 }
 
 .player-strip strong,
@@ -1323,7 +1420,7 @@ footer {
   }
 }
 
-@media (max-width: 880px) {
+@media (max-width: 1040px) {
   .app-shell {
     width: min(680px, calc(100% - 28px));
     padding-top: 34px;

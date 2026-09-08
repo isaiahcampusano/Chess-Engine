@@ -12,14 +12,24 @@ from engine import (
     SearchResult,
     choose_best_move,
     choose_move_with_skill,
+    evaluate_board,
     get_evaluation,
 )
+from personality import PERSONALITIES, Personality, get_personality
 
 
 ENGINE_TIME_LIMIT_SECONDS = 8.0
+PLAYER_BLUNDER_THRESHOLD_CP = 150
+PLAYER_GOOD_MOVE_THRESHOLD_CP = 100
+POSITION_COMMENTARY_THRESHOLD_CP = 150
+POSITION_COMMENTARY_INTERVAL = 2
 BOTS = {
-    "novice": {"depth": 1, "label": "Novice", "blunder_chance": 0.35},
-    "expert": {"depth": 3, "label": "Expert", "blunder_chance": 0.0},
+    personality_id: {
+        "depth": personality.depth,
+        "label": personality.label,
+        "blunder_chance": personality.blunder_chance,
+    }
+    for personality_id, personality in PERSONALITIES.items()
 }
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -35,6 +45,8 @@ def index():
 @app.route("/select_bot", methods=["GET", "POST"])
 def select_bot():
     """Return the current opponent or commit a choice for the next game."""
+    _reset_stale_opponent()
+    opening_commentary = None
     if request.method == "POST":
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
@@ -58,6 +70,10 @@ def select_bot():
         session["active_game_bot"] = bot_id
         session["opponent_selected"] = True
         session["game_started"] = False
+        session["commentary_eval"] = evaluate_board(chess.Board())
+        session["commentary_tick"] = 0
+        session.pop("last_commentary", None)
+        opening_commentary = _pick_commentary(bot_id, "game_start")
 
     if not session.get("opponent_selected", False):
         return jsonify(
@@ -69,10 +85,14 @@ def select_bot():
                 "active_game_bot": None,
                 "game_active": False,
                 "needs_selection": True,
+                "commentary": None,
+                "avatar": None,
+                "idle_lines": [],
             }
         )
 
     bot_id = _active_game_bot_id()
+    personality = get_personality(bot_id)
     return jsonify(
         {
             "status": "ok",
@@ -82,6 +102,10 @@ def select_bot():
             "active_game_bot": _active_game_bot_id(),
             "game_active": session.get("game_started", False),
             "needs_selection": False,
+            "tier": personality.tier,
+            "commentary": opening_commentary,
+            "avatar": personality.avatar,
+            "idle_lines": personality.lines.get("idle", []),
         }
     )
 
@@ -116,13 +140,26 @@ def end_game():
     if board is None or not board.is_game_over():
         return _error("The opponent stays locked until the game is over.", 409)
 
+    bot_id = _valid_session_bot_id()
+    outcome = board.outcome()
+    trigger = _terminal_commentary_trigger(outcome, chess.BLACK)
+    commentary = _pick_commentary(bot_id, trigger) if bot_id and trigger else None
+    avatar = get_personality(bot_id).avatar if bot_id else None
     _clear_opponent_selection()
-    return jsonify({"status": "ok", "needs_selection": True})
+    return jsonify(
+        {
+            "status": "ok",
+            "needs_selection": True,
+            "commentary": commentary,
+            "avatar": avatar,
+        }
+    )
 
 
 @app.post("/move")
 def handle_move():
     """Return the engine's best move for a supplied FEN position."""
+    _reset_stale_opponent()
     if not session.get("opponent_selected", False):
         return _error("Choose an opponent before starting the game.", 409)
 
@@ -142,7 +179,13 @@ def handle_move():
     if not board.is_valid():
         return _error("The supplied FEN does not describe a valid chess position.", 400)
 
+    bot_id = _active_game_bot_id()
+    personality = get_personality(bot_id)
+    bot_color = board.turn
     if board.is_game_over():
+        outcome = board.outcome()
+        trigger = _terminal_commentary_trigger(outcome, bot_color)
+        commentary = _pick_commentary(bot_id, trigger) if trigger else None
         _clear_opponent_selection()
         return jsonify(
             {
@@ -156,16 +199,23 @@ def handle_move():
                 "is_check": False,
                 "is_castle": False,
                 "is_promotion": False,
-                "outcome": _outcome_payload(board.outcome()),
+                "outcome": _outcome_payload(outcome),
+                "commentary": commentary,
+                "avatar": personality.avatar,
             }
         )
 
-    bot_id = _active_game_bot_id()
     session["game_started"] = True
     bot_config = BOTS[bot_id]
     max_depth = bot_config["depth"]
     blunder_chance = bot_config.get("blunder_chance", 0.0)
     result: SearchResult | None = None
+    position_before_bot_eval = evaluate_board(board)
+    player_trigger = _player_move_trigger(
+        session.get("commentary_eval"),
+        position_before_bot_eval,
+        not bot_color,
+    )
 
     search_depths = [max_depth]
     if max_depth != 1:
@@ -239,8 +289,34 @@ def handle_move():
     }
     position_after_move = board.copy(stack=False)
     position_after_move.push(move)
+    position_after_bot_eval = evaluate_board(position_after_move)
     outcome = position_after_move.outcome()
     game_over = outcome is not None
+    commentary_tick = int(session.get("commentary_tick", 0)) + 1
+    session["commentary_tick"] = commentary_tick
+    session["commentary_eval"] = position_after_bot_eval
+
+    trigger = _terminal_commentary_trigger(outcome, bot_color)
+    if trigger is None and player_trigger == "player_blunder":
+        trigger = player_trigger
+    if trigger is None and _bot_blundered(
+        personality,
+        position_before_bot_eval,
+        position_after_bot_eval,
+        bot_color,
+    ):
+        trigger = "bot_blunder_aware"
+    if trigger is None and player_trigger == "player_good_move":
+        trigger = player_trigger
+    if trigger is None and move_flags["is_capture"]:
+        trigger = "bot_capture"
+    if trigger is None and commentary_tick % POSITION_COMMENTARY_INTERVAL == 0:
+        if result.score > POSITION_COMMENTARY_THRESHOLD_CP:
+            trigger = "bot_winning"
+        elif result.score < -POSITION_COMMENTARY_THRESHOLD_CP:
+            trigger = "bot_losing"
+
+    commentary = _pick_commentary(bot_id, trigger) if trigger else None
     if game_over:
         _clear_opponent_selection()
 
@@ -254,6 +330,8 @@ def handle_move():
             "game_over": game_over,
             **move_flags,
             "outcome": _outcome_payload(outcome),
+            "commentary": commentary,
+            "avatar": personality.avatar,
         }
     )
 
@@ -306,7 +384,7 @@ def handle_evaluation():
         return _error("The supplied FEN does not describe a valid chess position.", 400)
 
     try:
-        return jsonify(get_evaluation(board, depth=BOTS["expert"]["depth"]))
+        return jsonify(get_evaluation(board, depth=PERSONALITIES["professor"].depth))
     except Exception:
         app.logger.exception("Position evaluation failed")
         return _error("The position could not be evaluated.", 500)
@@ -332,8 +410,8 @@ def _outcome_payload(outcome: chess.Outcome | None) -> dict[str, str | None] | N
 
 
 def _selected_bot_id() -> str:
-    bot_id = session.get("bot", "expert")
-    return bot_id if bot_id in BOTS else "expert"
+    bot_id = session.get("bot", "professor")
+    return bot_id if bot_id in BOTS else "professor"
 
 
 def _active_game_bot_id() -> str:
@@ -348,7 +426,70 @@ def _clear_opponent_selection() -> None:
     session.pop("bot", None)
     session.pop("active_game_bot", None)
     session.pop("opponent_selected", None)
+    session.pop("commentary_eval", None)
+    session.pop("commentary_tick", None)
+    session.pop("last_commentary", None)
     session["game_started"] = False
+
+
+def _valid_session_bot_id() -> str | None:
+    bot_id = session.get("active_game_bot")
+    return bot_id if bot_id in BOTS else None
+
+
+def _reset_stale_opponent() -> None:
+    if session.get("opponent_selected", False) and _valid_session_bot_id() is None:
+        _clear_opponent_selection()
+
+
+def _pick_commentary(bot_id: str, trigger: str) -> str | None:
+    line = get_personality(bot_id).say(
+        trigger,
+        previous=session.get("last_commentary"),
+    )
+    if line is not None:
+        session["last_commentary"] = line
+    return line
+
+
+def _score_for_color(score: int, color: chess.Color) -> int:
+    return score if color == chess.WHITE else -score
+
+
+def _player_move_trigger(
+    previous_eval: object,
+    current_eval: int,
+    player_color: chess.Color,
+) -> str | None:
+    if not isinstance(previous_eval, (int, float)):
+        return None
+    delta = _score_for_color(current_eval - int(previous_eval), player_color)
+    if delta <= -PLAYER_BLUNDER_THRESHOLD_CP:
+        return "player_blunder"
+    if delta >= PLAYER_GOOD_MOVE_THRESHOLD_CP:
+        return "player_good_move"
+    return None
+
+
+def _bot_blundered(
+    personality: Personality,
+    before_eval: int,
+    after_eval: int,
+    bot_color: chess.Color,
+) -> bool:
+    if "bot_blunder_aware" not in personality.lines:
+        return False
+    delta = _score_for_color(after_eval - before_eval, bot_color)
+    return delta <= -PLAYER_BLUNDER_THRESHOLD_CP
+
+
+def _terminal_commentary_trigger(
+    outcome: chess.Outcome | None,
+    bot_color: chess.Color,
+) -> str | None:
+    if outcome is None or outcome.termination != chess.Termination.CHECKMATE:
+        return None
+    return "checkmate_win" if outcome.winner == bot_color else "checkmate_loss"
 
 
 if __name__ == "__main__":
