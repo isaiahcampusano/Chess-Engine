@@ -2,9 +2,8 @@
 
 engine built in python
 
-<img width="1069" height="870" alt="image" src="https://github.com/user-attachments/assets/88295322-b36f-465a-b428-61bcc74cebc6" />
-
 https://isaiahcampusano-chess-engine.onrender.com/
+
 
 ## Opponents
 
