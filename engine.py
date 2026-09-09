@@ -12,6 +12,8 @@ from typing import Literal
 import chess
 import chess.polyglot
 
+from opening_book import OpeningBook
+
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +204,8 @@ def choose_best_move(
     *,
     time_limit_seconds: float | None = None,
     debug: bool = False,
+    opening_book: OpeningBook | None = None,
+    rng: random.Random | None = None,
 ) -> SearchResult:
     """Pick the best legal move, optionally keeping the search within a deadline."""
     search_started = perf_counter()
@@ -212,6 +216,11 @@ def choose_best_move(
 
     if board.is_game_over():
         return SearchResult(move=None, score=evaluate_board(board), nodes=0, depth=0)
+
+    if opening_book is not None:
+        book_move = opening_book.get_move(board, rng=rng)
+        if book_move is not None:
+            return SearchResult(book_move, _score_move_for_side_to_move(board, book_move), nodes=0)
 
     safety_move = next(iter(board.legal_moves))
     logger.info("Engine called on FEN: %s", board.fen())
@@ -470,16 +479,21 @@ def choose_move_with_skill(
     *,
     blunder_chance: float = 0.35,
     rng: random.Random | None = None,
+    opening_book: OpeningBook | None = None,
 ) -> SearchResult:
     """Pick a move with a chance of playing something worse than best.
 
-    Uses a single-ply static evaluation per legal move (no quiescence or deeper
-    search), then may sample uniformly from the non-best moves.
+    Uses the book with 90% probability when available. Otherwise uses a
+    single-ply static evaluation and may sample from the non-best moves.
     """
     if board.is_game_over():
         return SearchResult(move=None, score=evaluate_board(board), nodes=0, depth=0)
 
     rng = rng or random
+    if opening_book is not None:
+        book_move = opening_book.get_move(board, rng=rng)
+        if book_move is not None and rng.random() >= 0.10:
+            return SearchResult(book_move, _score_move_for_side_to_move(board, book_move), nodes=0)
     scored = [
         (move, _score_move_for_side_to_move(board, move))
         for move in board.legal_moves

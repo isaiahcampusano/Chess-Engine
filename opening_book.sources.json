@@ -1,0 +1,123 @@
+{
+  "license": "CC0-1.0",
+  "settings": {
+    "max_plies": 20,
+    "min_rating": 2000,
+    "min_base_seconds": 180,
+    "top_moves": 5,
+    "min_count": 3
+  },
+  "sources": [
+    {
+      "file": "lichess_db_standard_rated_2013-01.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-01.pgn.zst",
+      "sha256": "aa40b3671fa3cf1072eb182892cd90b0e1e003a4a5943492f64b77e7f3fd1635",
+      "seen": 121332,
+      "filtered": 121156,
+      "malformed": 0,
+      "accepted": 176
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-02.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-02.pgn.zst",
+      "sha256": "c136acdf343293c45252906fee91e3b561fb26a936979f52dbe04bb649a2fd86",
+      "seen": 123961,
+      "filtered": 123567,
+      "malformed": 0,
+      "accepted": 394
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-03.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-03.pgn.zst",
+      "sha256": "89da64fc3c1fe3bfd571d7f626232189f3259aa728b46ea81e5cb8f3fdb34b9e",
+      "seen": 158635,
+      "filtered": 158162,
+      "malformed": 0,
+      "accepted": 473
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-04.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-04.pgn.zst",
+      "sha256": "11c795d3c81c49fa97cd958b0984c044410c78ad90f454ed08abb57ab7d00d52",
+      "seen": 157871,
+      "filtered": 157490,
+      "malformed": 0,
+      "accepted": 381
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-05.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-05.pgn.zst",
+      "sha256": "f044607c9f565831524dbedfd474100c8604dba008600bfaf1b7a48ced74c17b",
+      "seen": 179550,
+      "filtered": 179175,
+      "malformed": 0,
+      "accepted": 375
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-06.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-06.pgn.zst",
+      "sha256": "fef2a88dcdb386eacf02800d119737079d9be154ed986007fe4f8b5bb76741e8",
+      "seen": 224679,
+      "filtered": 224148,
+      "malformed": 0,
+      "accepted": 531
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-07.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-07.pgn.zst",
+      "sha256": "51da6cfc0a6aa6e5f71a21691650dad0dc1adcabb5ba9e7de36f559ffb17a1f7",
+      "seen": 293459,
+      "filtered": 292221,
+      "malformed": 0,
+      "accepted": 1238
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-08.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-08.pgn.zst",
+      "sha256": "6202408d1c1cf11b1a9043b84c6bd2c03a01cb31597863857c26ee6ff82eea1b",
+      "seen": 325525,
+      "filtered": 324305,
+      "malformed": 0,
+      "accepted": 1220
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-09.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-09.pgn.zst",
+      "sha256": "d8a3eb5ed205aee5fef9a1a7aa91aecb408daa7faa8e481cdf9a37ed31c30ef3",
+      "seen": 325098,
+      "filtered": 323550,
+      "malformed": 0,
+      "accepted": 1548
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-10.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-10.pgn.zst",
+      "sha256": "4e21bd529150ea21bc68787eba2cf3f71d6745a019c98c707d2a008511143930",
+      "seen": 411039,
+      "filtered": 409942,
+      "malformed": 2,
+      "accepted": 1095
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-11.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-11.pgn.zst",
+      "sha256": "a1a9419694032136d03bec9ceb64a99c43a0b949e551136a2a57f36e0bdf27f4",
+      "seen": 487012,
+      "filtered": 484676,
+      "malformed": 2,
+      "accepted": 2334
+    },
+    {
+      "file": "lichess_db_standard_rated_2013-12.pgn.zst",
+      "url": "https://database.lichess.org/standard/lichess_db_standard_rated_2013-12.pgn.zst",
+      "sha256": "a77d132bdf7aece20f7f3b9b3aa69eae891f2a339e59bb148984c1577eba2de9",
+      "seen": 578262,
+      "filtered": 575202,
+      "malformed": 0,
+      "accepted": 3060
+    }
+  ],
+  "positions": 6937,
+  "candidate_moves": 9310,
+  "book_sha256": "4309b34a48fe8a94cc993879c98cf268f82088906b5cef07c81498d01dbe3ffe"
+}

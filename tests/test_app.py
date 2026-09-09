@@ -141,8 +141,8 @@ class WebAppTests(unittest.TestCase):
         expected = {
             "rookie": (1, 0.35),
             "hustler": (1, 0.35),
-            "professor": (3, 0.0),
-            "martin": (3, 0.0),
+            "professor": (4, 0.0),
+            "martin": (4, 0.0),
         }
         self.assertEqual(set(web_app.BOTS), set(expected))
         for bot_id, (depth, blunder_chance) in expected.items():
@@ -269,7 +269,7 @@ class WebAppTests(unittest.TestCase):
         )
         searched_board = search.call_args.args[0]
         self.assertEqual(searched_board.fen(), board.fen())
-        self.assertEqual(search.call_args.kwargs["depth"], 3)
+        self.assertEqual(search.call_args.kwargs["depth"], 4)
         self.assertEqual(search.call_args.kwargs["time_limit_seconds"], 8.0)
 
     def test_player_blunder_commentary_uses_static_evaluations(self) -> None:
@@ -402,7 +402,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(blocked_move.status_code, 409)
         self.assertEqual(selection.status_code, 200)
         self.assertEqual(move_response.status_code, 200)
-        self.assertEqual(search.call_args.kwargs["depth"], 3)
+        self.assertEqual(search.call_args.kwargs["depth"], 4)
 
     def test_end_game_releases_the_locked_opponent(self) -> None:
         response = self.client.post(
@@ -576,7 +576,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(chess.Move.from_uci(payload["engine_move"]), board.legal_moves)
         self.assertEqual(payload["depth"], 0)
         self.assertTrue(payload["timed_out"])
-        self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [3, 1])
+        self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [4, 1])
         self.assertTrue(
             all(
                 call.kwargs["time_limit_seconds"] == web_app.ENGINE_TIME_LIMIT_SECONDS
@@ -601,7 +601,7 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(payload["depth"], 0)
         self.assertTrue(payload["timed_out"])
-        self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [3, 1])
+        self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [4, 1])
 
     def test_move_endpoint_retries_at_depth_one_after_none_result(self) -> None:
         fallback = SearchResult(
@@ -618,7 +618,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["engine_move"], "e2e4")
         self.assertEqual(response.get_json()["depth"], 1)
-        self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [3, 1])
+        self.assertEqual([call.kwargs["depth"] for call in search.call_args_list], [4, 1])
 
     def test_rookie_failure_skips_duplicate_depth_one_retry(self) -> None:
         self.client.post("/new_game")

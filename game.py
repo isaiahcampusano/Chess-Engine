@@ -7,6 +7,7 @@ import os
 import chess
 
 from engine import SearchResult, choose_best_move
+from opening_book import get_default_opening_book
 
 
 FILES = "abcdefgh"
@@ -14,6 +15,7 @@ FILES = "abcdefgh"
 
 def play(depth: int = 3, human_color: chess.Color = chess.WHITE) -> None:
     board = chess.Board()
+    opening_book = get_default_opening_book()
     last_ai_result: SearchResult | None = None
 
     while not board.is_game_over():
@@ -24,7 +26,7 @@ def play(depth: int = 3, human_color: chess.Color = chess.WHITE) -> None:
         if board.turn == human_color:
             move = _prompt_for_move(board)
         else:
-            result = choose_best_move(board, depth=depth)
+            result = choose_best_move(board, depth=depth, opening_book=opening_book)
             move = result.move
             last_ai_result = result
 

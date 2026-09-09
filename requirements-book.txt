@@ -1,0 +1,2 @@
+# Optional, only needed to build from .pgn.zst archives.
+zstandard>=0.23,<1

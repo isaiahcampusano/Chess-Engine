@@ -324,7 +324,7 @@ let selectedBot = {
   id: "professor",
   label: "The Professor",
   tier: "expert",
-  depth: 3,
+  depth: 4,
   avatar: "professor.png",
   idleLines: [],
 };

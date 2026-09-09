@@ -16,9 +16,12 @@ from engine import (
     get_evaluation,
 )
 from personality import PERSONALITIES, Personality, get_personality
+from opening_book import get_default_opening_book
 
 
 ENGINE_TIME_LIMIT_SECONDS = 8.0
+LIVE_EVALUATION_DEPTH = 3
+OPENING_BOOK = get_default_opening_book()
 PLAYER_BLUNDER_THRESHOLD_CP = 150
 PLAYER_GOOD_MOVE_THRESHOLD_CP = 100
 POSITION_COMMENTARY_THRESHOLD_CP = 150
@@ -232,12 +235,14 @@ def handle_move():
                 candidate = choose_move_with_skill(
                     board,
                     blunder_chance=blunder_chance,
+                    opening_book=OPENING_BOOK,
                 )
             else:
                 candidate = choose_best_move(
                     board,
                     depth=search_depth,
                     time_limit_seconds=ENGINE_TIME_LIMIT_SECONDS,
+                    opening_book=OPENING_BOOK if index == 0 else None,
                 )
         except Exception:
             app.logger.exception(
@@ -384,7 +389,7 @@ def handle_evaluation():
         return _error("The supplied FEN does not describe a valid chess position.", 400)
 
     try:
-        return jsonify(get_evaluation(board, depth=PERSONALITIES["professor"].depth))
+        return jsonify(get_evaluation(board, depth=LIVE_EVALUATION_DEPTH))
     except Exception:
         app.logger.exception("Position evaluation failed")
         return _error("The position could not be evaluated.", 500)
