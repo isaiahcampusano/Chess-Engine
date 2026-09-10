@@ -14,6 +14,9 @@ const ANALYSIS_TIMEOUT_MS = 28_000;
 const EVALUATION_TIMEOUT_MS = 4_000;
 const EVALUATION_RANGE_CP = 500;
 const IDLE_COMMENTARY_INTERVAL_MS = 2_800;
+const MIN_THINKING_TIME_MS = 1_500;
+const THINKING_COMMENTARY_DELAY_MS = 650;
+const THINKING_COMMENTARY_INTERVAL_MS = 3_200;
 const PROMOTION_TEST_FEN = "8/P6k/8/8/8/8/7p/7K w - - 0 1";
 const PROMOTION_CAPTURE_TEST_FEN = "1r6/P6k/8/8/8/8/7p/7K w - - 0 1";
 const ANALYSIS_TEST_FEN = "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1";
@@ -334,6 +337,7 @@ let isStartingGame = false;
 let botRequestInFlight = false;
 let currentCommentary = "";
 let idleCommentaryTimer = null;
+let thinkingCommentaryDelayTimer = null;
 const planningState = {
   isPlanning: false,
   selectedSquare: null,
@@ -603,6 +607,37 @@ function stopIdleCommentary() {
   if (idleCommentaryTimer !== null) {
     window.clearInterval(idleCommentaryTimer);
     idleCommentaryTimer = null;
+  }
+}
+
+function startThinkingCommentary() {
+  stopThinkingCommentary();
+  thinkingCommentaryDelayTimer = window.setTimeout(() => {
+    thinkingCommentaryDelayTimer = null;
+    if (!isThinking) return;
+    showNextIdleCommentary();
+    if (selectedBot.idleLines.length > 1) {
+      idleCommentaryTimer = window.setInterval(
+        showNextIdleCommentary,
+        THINKING_COMMENTARY_INTERVAL_MS,
+      );
+    }
+  }, THINKING_COMMENTARY_DELAY_MS);
+}
+
+function stopThinkingCommentary() {
+  if (thinkingCommentaryDelayTimer !== null) {
+    window.clearTimeout(thinkingCommentaryDelayTimer);
+    thinkingCommentaryDelayTimer = null;
+  }
+  stopIdleCommentary();
+}
+
+function restoreCommentary(line) {
+  if (line) {
+    updateCommentary(line);
+  } else {
+    clearCommentary();
   }
 }
 
@@ -1211,16 +1246,21 @@ async function requestEngineMove() {
   pendingController = controller;
   isThinking = true;
   lastError = "";
-  startIdleCommentary();
+  startThinkingCommentary();
   render();
 
   try {
-    const response = await fetch("/move", {
+    const fetchPromise = fetch("/move", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fen: game.fen() }),
       signal: controller.signal,
     });
+    const delayPromise = new Promise((resolve) => {
+      window.setTimeout(resolve, MIN_THINKING_TIME_MS);
+    });
+
+    const [response] = await Promise.all([fetchPromise, delayPromise]);
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -1231,13 +1271,11 @@ async function requestEngineMove() {
       return;
     }
 
-    stopIdleCommentary();
+    stopThinkingCommentary();
     if (typeof data.commentary === "string" && data.commentary.trim()) {
       updateCommentary(data.commentary);
-    } else if (commentaryBeforeThinking) {
-      updateCommentary(commentaryBeforeThinking);
     } else {
-      clearCommentary();
+      restoreCommentary(commentaryBeforeThinking);
     }
 
     if (!data.engine_move) {
@@ -1287,14 +1325,10 @@ async function requestEngineMove() {
       error.name === "AbortError"
         ? "The engine request timed out. You can retry from this position."
         : error.message || "The engine could not calculate a move.";
-    if (commentaryBeforeThinking) {
-      updateCommentary(commentaryBeforeThinking);
-    } else {
-      clearCommentary();
-    }
+    restoreCommentary(commentaryBeforeThinking);
   } finally {
     window.clearTimeout(timer);
-    stopIdleCommentary();
+    stopThinkingCommentary();
     if (requestId === activeRequestId) {
       isThinking = false;
       pendingController = null;
@@ -1636,6 +1670,7 @@ async function startNewGame() {
   activeRequestId += 1;
   pendingController?.abort();
   pendingController = null;
+  stopThinkingCommentary();
   evaluationRequestId += 1;
   evaluationController?.abort();
   evaluationController = null;
@@ -1678,7 +1713,7 @@ function resetLocalGameState() {
   activeRequestId += 1;
   pendingController?.abort();
   pendingController = null;
-  stopIdleCommentary();
+  stopThinkingCommentary();
   clearCommentary();
   elements.opponentAvatar.removeAttribute("src");
   elements.opponentAvatar.alt = "";

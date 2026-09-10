@@ -584,6 +584,9 @@ h1 {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
 }
 
 .thinking-pill i {
@@ -593,7 +596,7 @@ h1 {
   margin-right: 6px;
   border-radius: 50%;
   background: currentColor;
-  animation: pulse 1s ease-in-out infinite;
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 .board-frame {
