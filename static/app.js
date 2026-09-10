@@ -518,7 +518,7 @@ async function selectBot(event) {
     elements.opponentSelectionError.hidden = false;
   } finally {
     botRequestInFlight = false;
-    renderBotSelector();
+    render();
   }
 }
 
