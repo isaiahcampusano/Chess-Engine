@@ -1,4 +1,4 @@
-import { Chess } from "https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm";
+import { Chess } from "./vendor/chess.js/chess.js";
 import {
   isMuted,
   playMoveSound,
@@ -8,7 +8,7 @@ import {
 } from "./sound.js";
 
 const PIECE_THEME =
-  "https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@v1.0.0/website/img/chesspieces/wikipedia/{piece}.png";
+  "/static/vendor/chesspieces/wikipedia/{piece}.png";
 const CLIENT_TIMEOUT_MS = 12_000;
 const ANALYSIS_TIMEOUT_MS = 28_000;
 const EVALUATION_TIMEOUT_MS = 4_000;
@@ -2287,8 +2287,14 @@ function renderStats() {
 
 function showDependencyError() {
   elements.dependencyAlert.hidden = false;
+  const missingDependencies = [];
+  if (typeof window.jQuery !== "function") missingDependencies.push("jQuery");
+  if (typeof window.Chessboard !== "function") missingDependencies.push("Chessboard");
+  const detail = missingDependencies.length
+    ? ` Missing: ${missingDependencies.join(", ")}.`
+    : "";
   elements.dependencyAlert.textContent =
-    "The chess board could not load. Check your internet connection and refresh the page.";
+    `The chess board could not load because a required local chess library did not initialize.${detail}`;
   elements.dependencyAlert.classList.add("is-error");
 }
 

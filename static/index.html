@@ -7,7 +7,7 @@
     <title>Python Chess Engine</title>
     <link
       rel="stylesheet"
-      href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css"
+      href="/static/vendor/chessboardjs/chessboard-1.0.0.min.css"
     >
     <link rel="stylesheet" href="/static/styles.css">
   </head>
@@ -417,7 +417,7 @@
         <div class="promotion-options" aria-label="Promotion pieces">
           <button type="button" class="promotion-option" data-promotion="q">
             <img
-              src="https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@v1.0.0/website/img/chesspieces/wikipedia/wQ.png"
+              src="/static/vendor/chesspieces/wikipedia/wQ.png"
               alt=""
             >
             <span>Queen</span>
@@ -425,7 +425,7 @@
           </button>
           <button type="button" class="promotion-option" data-promotion="r">
             <img
-              src="https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@v1.0.0/website/img/chesspieces/wikipedia/wR.png"
+              src="/static/vendor/chesspieces/wikipedia/wR.png"
               alt=""
             >
             <span>Rook</span>
@@ -433,7 +433,7 @@
           </button>
           <button type="button" class="promotion-option" data-promotion="b">
             <img
-              src="https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@v1.0.0/website/img/chesspieces/wikipedia/wB.png"
+              src="/static/vendor/chesspieces/wikipedia/wB.png"
               alt=""
             >
             <span>Bishop</span>
@@ -441,7 +441,7 @@
           </button>
           <button type="button" class="promotion-option" data-promotion="n">
             <img
-              src="https://cdn.jsdelivr.net/gh/oakmac/chessboardjs@v1.0.0/website/img/chesspieces/wikipedia/wN.png"
+              src="/static/vendor/chesspieces/wikipedia/wN.png"
               alt=""
             >
             <span>Knight</span>
@@ -454,15 +454,15 @@
       </div>
     </dialog>
 
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="/static/vendor/jquery/jquery-3.7.1.min.js"></script>
+    <script src="/static/vendor/chessboardjs/chessboard-1.0.0.min.js"></script>
     <script type="module" src="/static/app.js"></script>
     <script>
       window.setTimeout(function () {
         if (window.chessAppReady) return;
         var alert = document.getElementById("dependencyAlert");
         alert.textContent =
-          "The chess board could not load. Check your internet connection and refresh the page.";
+          "The chess board could not load because a required local chess library did not initialize. Refresh the page, and check the browser console if it continues.";
         alert.classList.add("is-error");
       }, 8000);
     </script>
